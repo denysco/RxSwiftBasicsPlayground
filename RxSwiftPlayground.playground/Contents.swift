@@ -937,3 +937,345 @@ example(of: "Challenge") {
     
     input.value = "9"
 }
+
+
+// COMBINING OPERATORS
+
+
+
+// Prefixing and concatenating
+
+example(of: "startWith") {
+
+    let numbers = Observable.of(2,3,4)
+    
+    let observable = numbers.startWith(1)
+    observable.subscribe(onNext: { value in
+        print(value)
+    })
+}
+
+example(of: "Observable.concat") {
+    
+    let first = Observable.of(1,2,3)
+    let second = Observable.of(4,5,6)
+    
+    let observable = Observable.concat([first, second])
+    
+    observable.subscribe(onNext: { value in
+        print(value)
+    })
+}
+
+example(of: "concat") {
+    
+    let germanCities = Observable.of("Berlin", "Münich", "Frankfurt")
+    let spanishCities = Observable.of("Madrid", "Barcelona", "Valencia")
+    
+    let observable = germanCities.concat(spanishCities)
+    observable
+    .subscribe(onNext: { value in
+        print(value)
+    })
+}
+
+
+example(of: "concatMap") {
+    /*
+    closely related to flatMap(_:). The closure you pass to flatMap(_:) returns
+    an Observable sequence which is subscribed to, and the emitted observables are
+    all merged. concatMap(_:) guarantees that each sequence produced by the closure
+    will run to completion before the next is subscribed to. concatMap(_:) is therefore
+    a handy way to guarantee sequential order.
+    */
+    
+    let sequences = [
+        "Germany": Observable.of("Berlin", "Münich", "Frankfurt"),
+        "Spain": Observable.of("Madrid", "Barcelona", "Valencia")
+    ]
+    
+    let observable = Observable.of("Germany", "Spain")
+    .concatMap { country in sequences[country] ?? .empty() }
+    
+    _ = observable.subscribe(onNext: { string in
+        print(string)
+    })
+    
+}
+
+// Merging
+
+example(of: "merge") {
+    
+    let left = PublishSubject<String>()
+    let right = PublishSubject<String>()
+    
+    let source = Observable.of(left.asObservable(), right.asObservable())
+    
+    let observable = source.merge()
+    let disposable = observable.subscribe(onNext: { value in
+        print(value)
+    })
+    
+    var leftValues = ["Berlin", "Munich", "Frankfurt"]
+    var rightValues = ["Madrid", "Barcelona", "Valencia"]
+    repeat {
+        if arc4random_uniform(2) == 0 {
+            if !leftValues.isEmpty {
+                left.onNext("Left: " + leftValues.removeFirst())
+            }
+        } else if !rightValues.isEmpty {
+            right.onNext("Right: " + rightValues.removeFirst())
+        }
+    } while !leftValues.isEmpty || !rightValues.isEmpty
+    
+    disposable.dispose()
+    
+    
+    /*
+     merge(maxConcurrent:) limits the number of sequences subscribed to at once.
+     This variant keeps subscribing to incoming sequences until it reaches the maxConcurrent limit.
+     After that, it puts incoming observables in a queue. It will subscribe to them in order,
+     as soon as one of current sequences completes.
+    */
+    
+}
+
+
+// Combining elements
+
+example(of: "combineLatest") {
+    
+    let left = PublishSubject<String>()
+    let right = PublishSubject<String>()
+    
+    let observable = Observable.combineLatest(left, right, resultSelector: {
+        lastLeft, lastRight in
+        "\(lastLeft) \(lastRight)"
+    })
+    
+    let disposable = observable.subscribe(onNext: { value in
+        print(value)
+    })
+    
+    print("> Sending a value to Left")
+    left.onNext("Hello,")
+    print("> Sending a value to Right")
+    right.onNext("world")
+    print("> Sending another value to Right")
+    right.onNext("RxSwift")
+    print("> Sending another value to Left")
+    left.onNext("Have a good day,")
+    
+    disposable.dispose()
+    
+    // features:
+    // 1. can combine sequences of heterogeneous types.
+    // 2. Nothing happens until each of the combined observables emits one value.
+}
+
+example(of: "combine user choice and value") {
+    
+    let choice: Observable<DateFormatter.Style> = Observable.of(.short, .long)
+    let dates = Observable.of(Date())
+    
+    let observable = Observable.combineLatest(choice, dates) {
+        (format, when) -> String in
+        let formatter = DateFormatter()
+        formatter.dateStyle = format
+        return formatter.string(from: when)
+    }
+    
+    observable.subscribe(onNext: { value in
+        print(value)
+    })
+    
+    
+    /*
+     combineLatest completes only when the last of its inner sequences completes.
+     Before that, it keeps sending combined values. If some sequences terminate,
+     it uses the last value emitted to combine with new values from other sequences.
+    */
+}
+
+example(of: "zip") {
+    
+    enum Weather {
+        case cloudy
+        case sunny
+    }
+    
+    let left: Observable<Weather> = Observable.of(.sunny, .cloudy, .cloudy, .sunny)
+    let right = Observable.of("Lisbon", "Copenhagen", "London", "Madrid", "Vienna")
+    
+    let observable = Observable.zip(left, right) { weather, city in // zip waits until each of the inner observables emits a new value. Called indexed sequencing.
+        return "It's \(weather) in \(city)"
+    }
+    
+    observable.subscribe(onNext: { value in
+        print(value)
+    })
+}
+
+
+// Triggers
+
+example(of: "withLatestFrom") {
+    
+    let button = PublishSubject<Void>()
+    let textField = PublishSubject<String>()
+    
+    let observable = button.withLatestFrom(textField)
+    
+    _ = observable.subscribe(onNext: { value in
+        print(value)
+    })
+    
+    textField.onNext("Par")
+    textField.onNext("Pari")
+    textField.onNext("Paris")
+    button.onNext(())
+    button.onNext(())
+    
+}
+
+
+example(of: "sample") {
+    
+    
+    // each time the trigger observable emits a value, sample(_:) emits the latest value
+    // from the “other” observable, but only if it arrived since the last “tick”.
+    // If no new data arrived, sample(_:) won’t emit anything.
+    
+    let button = PublishSubject<Void>()
+    let textField = PublishSubject<String>()
+    
+    let observable = textField.sample(button)
+    
+    _ = observable.subscribe(onNext: { value in
+        print(value)
+    })
+    
+    textField.onNext("Par")
+    textField.onNext("Pari")
+    textField.onNext("Paris")
+    button.onNext(()) // emit
+    button.onNext(()) // doesn't emit
+}
+
+
+// Siwtches
+
+example(of: "amb") {
+    
+    // The amb(_:) operator subscribes to left and right observables.
+    // It waits for any of them to emit an element, then unsubscribes
+    // from the other one.
+    
+    let left = PublishSubject<String>()
+    let right = PublishSubject<String>()
+    
+    let observable = left.amb(right)
+    let disposable = observable.subscribe(onNext: { value in
+        print(value)
+    })
+    
+    left.onNext("Lisbon")
+    right.onNext("Copenhagen")
+    left.onNext("London")
+    left.onNext("Madrid")
+    right.onNext("Vienna")
+    
+      disposable.dispose()
+}
+
+
+example(of: "swiftchLatest") {
+    
+    let one = PublishSubject<String>()
+    let two = PublishSubject<String>()
+    let three = PublishSubject<String>()
+    
+    let source = PublishSubject<Observable<String>>()
+    
+    let observable = source.switchLatest() // subscription only prints items from the latest sequence pushed to the source observable.
+    let disposable = observable.subscribe(onNext: { value in
+        print(value)
+    })
+    
+    source.onNext(one)
+    one.onNext("Some text from sequence one")
+    two.onNext("Some text from sequence two")
+    source.onNext(two)
+    two.onNext("More text from sequence two")
+    one.onNext("and also from sequence one")
+    source.onNext(three)
+    two.onNext("Why don't you see me?")
+    one.onNext("I'm alone, help me")
+    three.onNext("Hey it's three. I win.")
+    source.onNext(one)
+    one.onNext("Nope. It's me, one!")
+    
+    disposable.dispose()
+}
+
+// Combining elements within a sequence
+
+example(of: "reduce") {
+    
+    // reduce(_:_:) produces its summary (accumulated) value only when the source observable completes.
+    // Applying this operator to sequences that never complete won’t emit anything.
+    
+    let source = Observable.of(1,2,5,7,9)
+    
+    let observable = source.reduce(0, accumulator: +)
+    observable.subscribe(onNext: { value in
+        print(value)
+    })
+}
+
+example(of: "scan") {
+    let source = Observable.of(1,3,5,7,9)
+    
+    let observable = source.scan(0, accumulator: +)
+    
+    observable.subscribe(onNext: { value in
+        print(value)
+    })
+}
+
+example(of: "Challenge: The zip case 1") {
+    let source = Observable.of(1,3,5,7,9)
+    
+    let observable = Observable.zip(source, source.scan(0, accumulator: +))
+    
+    observable.subscribe(onNext: { value in
+        print(value)
+    })
+}
+
+example(of: "Challenge: The no zip case 2") {
+    let source = Observable.of(1,3,5,7,9)
+    
+    let observable = source.scan((0, 0), accumulator: { acc, current in
+        return (current, acc.1 + current)
+    })
+    
+    observable.subscribe(onNext: { value in
+        print(value)
+    })
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
